@@ -1,0 +1,82 @@
+# .github/workflows/generate-weekly-form.yml (Optional)
+name: Generate Weekly Status Form
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  generate-form:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Generate weekly reminder issue
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Get all open issues assigned to team members
+          const { data: issues } = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            assignee: '*', // Get issues with any assignee
+            per_page: 100
+          });
+          
+          // Group issues by assignee
+          const issuesByAssignee = {};
+          issues.forEach(issue => {
+            if (issue.assignees && issue.assignees.length > 0) {
+              issue.assignees.forEach(assignee => {
+                if (!issuesByAssignee[assignee.login]) {
+                  issuesByAssignee[assignee.login] = [];
+                }
+                issuesByAssignee[assignee.login].push(issue);
+              });
+            }
+          });
+          
+          // Create reminder issue
+          const assignees = Object.keys(issuesByAssignee);
+          if (assignees.length === 0) {
+            console.log('No assigned issues found');
+            return;
+          }
+          
+          let reminderBody = `# 📋 Weekly Status Update Reminder - ${today}\n\n`;
+          reminderBody += `Hi team! Time for your weekly status update.\n\n`;
+          reminderBody += `## How to submit your update:\n`;
+          reminderBody += `1. Visit the [status update form](https://your-username.github.io/your-repo)\n`;
+          reminderBody += `2. Fill out the status for each of your assigned issues\n`;
+          reminderBody += `3. Submit the form to automatically update the issues\n\n`;
+          reminderBody += `## Current assigned issues:\n\n`;
+          
+          for (const [assignee, userIssues] of Object.entries(issuesByAssignee)) {
+            reminderBody += `### @${assignee} (${userIssues.length} issues)\n`;
+            userIssues.forEach(issue => {
+              reminderBody += `- #${issue.number}: ${issue.title}\n`;
+            });
+            reminderBody += `\n`;
+          }
+          
+          reminderBody += `---\n`;
+          reminderBody += `*This is an automated reminder. Please submit your status update by end of day.*`;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `📋 Weekly Status Update Reminder - ${today}`,
+            body: reminderBody,
+            assignees: assignees,
+            labels: ['reminder', 'status-update']
+          });
+          
+          console.log(`Created reminder issue for ${assignees.length} team members`);
