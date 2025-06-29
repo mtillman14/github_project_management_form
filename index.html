@@ -450,8 +450,8 @@
             e.preventDefault();
 
             const username = document.getElementById('username').value;
-            const repo = document.getElementById('repo').value;
-            const owner = document.getElementById('owner').value;
+            const owner_repo = document.getElementById('owner_repo').value;
+            const [owner, repo] = owner_repo.split('/');
             const pat = document.getElementById('pat').value;
             
             // Disable submit button and show loading state
