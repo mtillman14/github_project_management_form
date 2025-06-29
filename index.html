@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weekly Status Update</title>
+    <title>Status Update</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
@@ -104,19 +104,22 @@
 </head>
 <body>
     <div class="container">
-        <h1>📋 Weekly Status Update</h1>
+        <h1>📋 Status Update</h1>
         
         <div class="auth-section">
-            <h3>GitHub Authentication</h3>
-            <p>Enter your GitHub repository details:</p>
-            <input type="text" id="username" class="auth-input" placeholder="GitHub username (assignee)" value="">
-            <input type="text" id="owner" class="auth-input" placeholder="Repository owner/organization" value="">
-            <input type="text" id="repo" class="auth-input" placeholder="Repository name (e.g., my-project)" value="">            
-            <input type="password" id="pat" class="auth-input" placeholder="GitHub Personal Access Token (PAT)" value="">
+            <h3>Select a project</h3>         
+            <input type="password" id="pat" class="auth-input" placeholder="Copy & paste GitHub Personal Access Token" value="">   
+            <select id="owner_repo" class="auth-input", onchange="populateAssignees()">
+                <option value="" disabled selected>Select repository owner/organization</option>
+                <option value="RTO-Spinal-Stim/Stroke-R01">Stroke R01</option>
+                <!-- Add more owners/orgs as needed -->
+            </select>
+            <select id="username" class="auth-input" style="display:none;">
+                <option value="" disabled selected>Loading team members...</option>
+            </select>            
             <button onclick="loadIssues()" class="submit-btn">Load My Issues</button>
             <p style="font-size: 12px; color: #656d76; margin-top: 8px;">
-                <strong>Note:</strong> This uses GitHub's public API. For private repositories or to avoid rate limits, you may need authentication tokens. 
-                The form can create issues in public repos where you have write access.
+                <strong>Note:</strong> This uses GitHub's public API. Authentication is required with a Personal Access Tokento update issues in repos where you have write access.
             </p>
         </div>
 
@@ -131,36 +134,63 @@
 
     <script>
         let currentIssues = [];
-        
-        // Demo data for testing without API
-        const demoIssues = [
-            {
-                number: 123,
-                title: "Implement user authentication system",
-                html_url: "https://github.com/your-org/my-project/issues/123",
-                labels: [{ name: "enhancement" }, { name: "backend" }],
-                milestone: { title: "v2.0" }
-            },
-            {
-                number: 456,
-                title: "Fix responsive design on mobile devices",
-                html_url: "https://github.com/your-org/my-project/issues/456",
-                labels: [{ name: "bug" }, { name: "frontend" }],
-                milestone: null
-            },
-            {
-                number: 789,
-                title: "Update documentation for API endpoints",
-                html_url: "https://github.com/your-org/my-project/issues/789",
-                labels: [{ name: "documentation" }],
-                milestone: { title: "v1.5" }
+
+        /**
+         * Fetches the "Status" project field for a given issue using GitHub's GraphQL API.
+         * @param {string} pat - GitHub Personal Access Token
+         * @param {string} owner - Repository owner/org
+         * @param {string} repo - Repository name
+         * @param {number} issueNumber - Issue number
+         * @returns {Promise<string|null>} - The status value or null if not found
+         */
+        async function fetchIssueProjectStatus(pat, owner, repo, issueNumber) {
+            const query = `
+            query($owner: String!, $repo: String!, $issueNumber: Int!) {
+                repository(owner: $owner, name: $repo) {
+                issue(number: $issueNumber) {
+                    projectItems(first: 10) {
+                    nodes {
+                        project { title }
+                        fieldValues(first: 20) {
+                        nodes {
+                            ... on ProjectV2ItemFieldSingleSelectValue {
+                            field { ... on ProjectV2SingleSelectField { name } }
+                            name
+                            }
+                        }
+                        }
+                    }
+                    }
+                }
+                }
             }
-        ];
+            `;
+            const variables = { owner, repo, issueNumber: Number(issueNumber) };
+            const res = await fetch('https://api.github.com/graphql', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${pat}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query, variables })
+            });
+            const data = await res.json();
+            // Find the "Status" field value
+            const items = data.data?.repository?.issue?.projectItems?.nodes || [];
+            for (const item of items) {
+                for (const fv of item.fieldValues.nodes) {
+                    if (fv.field?.name === 'Status') {
+                        return fv.name;
+                    }
+                }
+            }
+            return null;
+        }
 
         async function loadIssues() {
             const username = document.getElementById('username').value;
-            const repo = document.getElementById('repo').value;
-            const owner = document.getElementById('owner').value;
+            const owner_repo = document.getElementById('owner_repo').value;
+            const [owner, repo] = owner_repo.split('/');
             const pat = document.getElementById('pat').value;
 
             if (!username || !repo || !owner) {
@@ -197,9 +227,12 @@
                 const issues = await response.json();
                 
                 // Filter out pull requests (GitHub API returns both issues and PRs)
-                const actualIssues = issues.filter(issue => !issue.pull_request);
-                
-                currentIssues = actualIssues;
+                const currentIssues = issues.filter(issue => !issue.pull_request);
+                if (currentIssues.length === 0) {
+                    container.innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
+                    document.getElementById('submitBtn').style.display = 'none';
+                    return;
+                }
                 renderIssues(currentIssues);
                 document.getElementById('submitBtn').style.display = 'block';
                 
@@ -208,53 +241,167 @@
                 container.innerHTML = `<div class="error">Error loading issues: ${error.message}</div>`;
             }
         }
-        
-        function renderIssues(issues) {
+
+        function normalizeStatus(status) {
+            default_status = 'todo';
+            // default_status = 'in_progress';
+            if (!status) return default_status;
+            switch (status.toLowerCase()) {
+                case 'scheduled':
+                    return 'scheduled';
+                case 'to do':
+                case 'todo':
+                    return 'todo';
+                case 'in progress':
+                case 'in_progress':
+                    return 'in_progress';
+                case 'done':
+                case 'completed':
+                    return 'completed';
+                case 'blocked':
+                    return 'blocked';
+                case "not doing":
+                    return 'not_doing';
+                default:
+                    return default_status;
+            }
+        }
+
+        function prettifyStatus(status) {
+            switch (status) {
+                case 'todo':
+                    return '📝 To Do';
+                case 'in_progress':
+                    return '🔄 In progress';
+                case 'completed':
+                    return '✅ Done';
+                case 'blocked':
+                    return '🚫 Blocked';
+                case 'not doing':
+                    return '❌ Not Doing';
+                case 'scheduled':
+                    return '📅 Scheduled';
+                default:
+                    return status;
+            }
+        }
+
+        async function renderIssues(issues) {
             const container = document.getElementById('issuesContainer');
-            
+
             if (issues.length === 0) {
                 container.innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
                 document.getElementById('submitBtn').style.display = 'none';
                 return;
             }
-            
-            container.innerHTML = issues.map(issue => `
-                <div class="issue-item">
-                    <div class="issue-title">
-                        <a href="${issue.html_url}" target="_blank">#${issue.number}: ${issue.title}</a>
+
+            // --- Batch GraphQL Query for all issue statuses ---
+            const pat = document.getElementById('pat').value;
+            const owner_repo = document.getElementById('owner_repo').value;
+            const [owner, repo] = owner_repo.split('/');
+
+            // Build the batch query
+            let batchQuery = 'query BatchStatus {';
+            issues.forEach((issue, idx) => {
+                batchQuery += `
+                    issue${idx}: repository(owner: "${owner}", name: "${repo}") {
+                        issue(number: ${issue.number}) {
+                            projectItems(first: 10) {
+                                nodes {
+                                    fieldValues(first: 20) {
+                                        nodes {
+                                            ... on ProjectV2ItemFieldSingleSelectValue {
+                                                field { ... on ProjectV2SingleSelectField { name } }
+                                                name
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                `;
+            });
+            batchQuery += '}';
+
+            // Fetch all statuses in one request
+            let statusMap = {};
+            try {
+                const res = await fetch('https://api.github.com/graphql', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${pat}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: batchQuery })
+                });
+                const data = await res.json();
+                console.log('GraphQL status data:', data);
+                if (data.errors) console.error('GraphQL errors:', data.errors);
+                issues.forEach((issue, idx) => {
+                    const projectItems = data.data?.[`issue${idx}`]?.issue?.projectItems?.nodes || [];
+                    let status = null;
+                    for (const item of projectItems) {
+                        for (const fv of item.fieldValues.nodes) {
+                            if (fv.field?.name === 'Status') {
+                                status = fv.name;
+                            }
+                        }
+                    }
+                    statusMap[issue.number] = status;
+                });
+            } catch (e) {
+                // If error, fallback to null statuses
+                issues.forEach(issue => statusMap[issue.number] = null);
+            }
+
+            // --- Render issues with status as radio selection ---
+            container.innerHTML = issues.map(issue => {
+                const status = normalizeStatus(statusMap[issue.number]);
+                return `
+                    <div class="issue-item">
+                        <div class="issue-title">
+                            <a href="${issue.html_url}" target="_blank">#${issue.number}: ${issue.title}</a>
+                        </div>
+                        <div class="issue-meta">
+                            ${issue.labels.map(label => `<span style="background: #${label.color || 'e1e4e8'}; color: ${getContrastColor(label.color || 'e1e4e8')}; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-right: 4px;">${label.name}</span>`).join('')}
+                            ${issue.milestone ? `• Milestone: ${issue.milestone.title}` : ''}
+                            ${issue.created_at ? `• Created: ${new Date(issue.created_at).toLocaleDateString()}` : ''}
+                            ${status ? `<div><strong>Current Status: ${prettifyStatus(status)}</strong></div>` : ''}
+                        </div>
+                        <div class="status-options">
+                            <strong>Status Update:</strong>
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="scheduled" ${!status ? 'checked' : ''}>
+                                📅 Scheduled
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="todo" ${status === 'todo' ? 'checked' : ''}>
+                                📝 To Do
+                            </label>
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="in_progress" ${status === 'in_progress' ? 'checked' : ''}>
+                                🔄 In progress
+                            </label>
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="completed" ${status === 'completed' ? 'checked' : ''}>
+                                ✅ Done
+                            </label>
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="blocked" ${status === 'blocked' ? 'checked' : ''}>
+                                🚫 Blocked
+                            </label>
+                            <label>
+                                <input type="radio" name="status_${issue.number}" value="not_doing" ${status === 'not_doing' ? 'checked' : ''}>
+                                ❌ Not Doing
+                            </label>
+                        </div>
+                        <textarea 
+                            name="comment_${issue.number}" 
+                            class="comment-box" 
+                            placeholder="Are there any comments or updates about this issue?"></textarea>
                     </div>
-                    <div class="issue-meta">
-                        ${issue.labels.map(label => `<span style="background: #${label.color || 'e1e4e8'}; color: ${getContrastColor(label.color || 'e1e4e8')}; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-right: 4px;">${label.name}</span>`).join('')}
-                        ${issue.milestone ? `• Milestone: ${issue.milestone.title}` : ''}
-                        ${issue.created_at ? `• Created: ${new Date(issue.created_at).toLocaleDateString()}` : ''}
-                    </div>
-                    
-                    <div class="status-options">
-                        <strong>Status Update:</strong>
-                        <label>
-                            <input type="radio" name="status_${issue.number}" value="in_progress" checked>
-                            🔄 Still in progress
-                        </label>
-                        <label>
-                            <input type="radio" name="status_${issue.number}" value="completed">
-                            ✅ Completed
-                        </label>
-                        <label>
-                            <input type="radio" name="status_${issue.number}" value="blocked">
-                            🚫 Blocked
-                        </label>
-                        <label>
-                            <input type="radio" name="status_${issue.number}" value="needs_review">
-                            👀 Needs review
-                        </label>
-                    </div>
-                    
-                    <textarea 
-                        name="comment_${issue.number}" 
-                        class="comment-box" 
-                        placeholder="Add any comments or updates about this issue..."></textarea>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
         
         // Helper function to determine text color based on background color
@@ -269,6 +416,34 @@
             
             // Return black for light colors, white for dark colors
             return luminance > 0.5 ? '#000000' : '#ffffff';
+        }
+
+        // Populate the assignee dropdown based on selected repository
+        async function populateAssignees() {
+            const ownerRepo = document.getElementById('owner_repo').value;
+            const pat = document.getElementById('pat').value;
+            const usernameSelect = document.getElementById('username');
+            usernameSelect.style.display = 'inline-block';
+            usernameSelect.innerHTML = `<option value="" disabled selected>Loading team members...</option>`;
+
+            if (!ownerRepo) {
+                usernameSelect.style.display = 'none';
+                return;
+            }
+
+            const [owner, repo] = ownerRepo.split('/');
+            const headers = { 'Accept': 'application/vnd.github.v3+json' };
+            if (pat) headers['Authorization'] = `Bearer ${pat}`;
+
+            try {
+                const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/collaborators`, { headers });
+                if (!res.ok) throw new Error('Could not fetch collaborators');
+                const users = await res.json();
+                usernameSelect.innerHTML = `<option value="" disabled selected>Select a team member</option>` +
+                    users.map(user => `<option value="${user.login}">${user.login}</option>`).join('');
+            } catch (e) {
+                usernameSelect.innerHTML = `<option value="" disabled selected>Could not load team. Check the GitHub Personal Access Token.</option>`;
+            }
         }
         
         document.getElementById('statusForm').addEventListener('submit', async function(e) {
@@ -302,7 +477,7 @@
                 
                 // Generate the status update issue body
                 const updateBody = generateUpdateIssue(updates, username);
-                const updateTitle = `Weekly Status Update - ${new Date().toISOString().split('T')[0]} - ${username}`;
+                const updateTitle = `Status Update - ${new Date().toISOString().split('T')[0]} - ${username}`;
                 
                 // Create the status update issue via GitHub API
                 const headers = {
@@ -354,7 +529,7 @@
         function generateUpdateIssue(updates, username) {
             const timestamp = new Date().toISOString().split('T')[0];
             
-            let body = `# Weekly Status Update - ${timestamp}\n\n`;
+            let body = `# Status Update - ${timestamp}\n\n`;
             body += `**Reporter:** @${username}\n\n`;
             body += `<!-- STATUS_UPDATE_DATA\n`;
             body += JSON.stringify(updates, null, 2);

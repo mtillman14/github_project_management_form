@@ -1,5 +1,5 @@
-# .github/workflows/generate-weekly-form.yml (Optional)
-name: Generate Weekly Status Form
+# .github/workflows/generate-form.yml (Optional)
+name: Generate Status Update Form
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Generate weekly reminder issue
+    - name: Generate reminder issue
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -51,8 +51,8 @@ jobs:
             return;
           }
           
-          let reminderBody = `# 📋 Weekly Status Update Reminder - ${today}\n\n`;
-          reminderBody += `Hi team! Time for your weekly status update.\n\n`;
+          let reminderBody = `# 📋 Status Update Reminder - ${today}\n\n`;
+          reminderBody += `Hi team! Can you please provide a status update?\n\n`;
           reminderBody += `## How to submit your update:\n`;
           reminderBody += `1. Visit the [status update form](https://your-username.github.io/your-repo)\n`;
           reminderBody += `2. Fill out the status for each of your assigned issues\n`;
@@ -73,7 +73,7 @@ jobs:
           await github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `📋 Weekly Status Update Reminder - ${today}`,
+            title: `📋 Status Update Reminder - ${today}`,
             body: reminderBody,
             assignees: assignees,
             labels: ['reminder', 'status-update']
