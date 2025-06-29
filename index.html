@@ -485,6 +485,15 @@
                 const updates = currentIssues.map(issue => {
                     const status = document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value;
                     const comment = document.querySelector(`textarea[name="comment_${issue.number}"]`)?.value;
+
+                    const statusElement = document.querySelector(`input[name="status_${issue.number}"]:checked`);
+                    const statusCheck = statusElement?.value;
+                    
+                    console.log(`Issue ${issue.number}:`, {
+                        statusElement: statusElement,
+                        status: statusCheck,
+                        allRadios: document.querySelectorAll(`input[name="status_${issue.number}"]`).length
+                    });
                     
                     return {
                         issue_number: issue.number,
