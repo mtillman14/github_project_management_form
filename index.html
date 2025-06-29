@@ -482,7 +482,7 @@
             try {
                 // Collect form data
                 const updates = currentIssues.map(issue => {
-                    const status = document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value;
+                    const status = makeStatusMatchGitHub(document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value);
                     const comment = document.querySelector(`textarea[name="comment_${issue.number}"]`)?.value;
                     
                     return {
@@ -493,6 +493,11 @@
                         user: username
                     };
                 });
+
+                console.log('Collected updates:', updates);
+                if (updates.length === 0) {
+                    throw new Error('No issues selected for update.');
+                }
                 
                 // Generate the status update issue body
                 const updateBody = generateUpdateIssue(updates, username);
@@ -564,7 +569,7 @@
             updates.forEach(update => {
                 
                 body += `### Issue #${update.issue_number}: ${update.issue_title}\n`;
-                body += `**Status:** ${makeStatusMatchGitHub([update.status])}\n`;
+                body += `**Status:** ${update.status}\n`;
                 if (update.comment) {
                     body += `**Comment:** ${update.comment}\n`;
                 }
