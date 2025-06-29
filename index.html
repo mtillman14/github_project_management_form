@@ -227,7 +227,7 @@
                 const issues = await response.json();
                 
                 // Filter out pull requests (GitHub API returns both issues and PRs)
-                const currentIssues = issues.filter(issue => !issue.pull_request);
+                currentIssues = issues.filter(issue => !issue.pull_request);
                 if (currentIssues.length === 0) {
                     container.innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
                     document.getElementById('submitBtn').style.display = 'none';
@@ -481,14 +481,15 @@
             
             try {
                 // Collect form data
+                console.log('Collecting updates for current issues:', currentIssues);
                 const updates = currentIssues.map(issue => {
-                    const status = makeStatusMatchGitHub(document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value);
+                    const status = document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value;
                     const comment = document.querySelector(`textarea[name="comment_${issue.number}"]`)?.value;
                     
                     return {
                         issue_number: issue.number,
                         issue_title: issue.title,
-                        status: status,
+                        status: makeStatusMatchGitHub(status),
                         comment: comment || '',
                         user: username
                     };
