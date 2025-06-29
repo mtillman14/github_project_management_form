@@ -111,7 +111,7 @@
             <input type="password" id="pat" class="auth-input" placeholder="Copy & paste GitHub Personal Access Token" value="">   
             <select id="owner_repo" class="auth-input", onchange="populateAssignees()">
                 <option value="" disabled selected>Select repository owner/organization</option>
-                <option value="RTO-Spinal-Stim/Stroke-R01">Stroke R01</option>
+                <option value="RTO-Spinal-Stim/Stroke-R01/2">Stroke R01</option>
                 <!-- Add more owners/orgs as needed -->
             </select>
             <select id="username" class="auth-input" style="display:none;">
@@ -190,7 +190,7 @@
         async function loadIssues() {
             const username = document.getElementById('username').value;
             const owner_repo = document.getElementById('owner_repo').value;
-            const [owner, repo] = owner_repo.split('/');
+            const [owner, repo, project] = owner_repo.split('/');
             const pat = document.getElementById('pat').value;
 
             if (!username || !repo || !owner) {
@@ -267,6 +267,25 @@
             }
         }
 
+        function makeStatusMatchGitHub(status) {
+            switch (status.toLowerCase()) {
+                case 'todo':
+                    return 'To Do';
+                case 'in_progress':
+                    return 'In Progress';
+                case 'completed':
+                    return 'Done';
+                case 'blocked':
+                    return 'Blocked';
+                case 'not_doing':
+                    return 'Not Doing';
+                case 'scheduled':
+                    return 'Scheduled';
+                default:
+                    return status;
+            }
+        }
+
         function prettifyStatus(status) {
             switch (status) {
                 case 'todo':
@@ -298,7 +317,7 @@
             // --- Batch GraphQL Query for all issue statuses ---
             const pat = document.getElementById('pat').value;
             const owner_repo = document.getElementById('owner_repo').value;
-            const [owner, repo] = owner_repo.split('/');
+            const [owner, repo, project] = owner_repo.split('/');
 
             // Build the batch query
             let batchQuery = 'query BatchStatus {';
@@ -431,7 +450,7 @@
                 return;
             }
 
-            const [owner, repo] = ownerRepo.split('/');
+            const [owner, repo, project] = ownerRepo.split('/');
             const headers = { 'Accept': 'application/vnd.github.v3+json' };
             if (pat) headers['Authorization'] = `Bearer ${pat}`;
 
@@ -451,7 +470,7 @@
 
             const username = document.getElementById('username').value;
             const owner_repo = document.getElementById('owner_repo').value;
-            const [owner, repo] = owner_repo.split('/');
+            const [owner, repo, project] = owner_repo.split('/');
             const pat = document.getElementById('pat').value;
             
             // Disable submit button and show loading state
@@ -478,6 +497,9 @@
                 // Generate the status update issue body
                 const updateBody = generateUpdateIssue(updates, username);
                 const updateTitle = `Status Update - ${new Date().toISOString().split('T')[0]} - ${username}`;
+
+                console.log('Generated update body:', updateBody);
+                console.log('Update title:', updateTitle);
                 
                 // Create the status update issue via GitHub API
                 const headers = {
@@ -528,24 +550,21 @@
         
         function generateUpdateIssue(updates, username) {
             const timestamp = new Date().toISOString().split('T')[0];
+
+            let [owner, repo, project] = document.getElementById('owner_repo').value.split('/');
             
             let body = `# Status Update - ${timestamp}\n\n`;
             body += `**Reporter:** @${username}\n\n`;
+            body += `**Project:** ${project}\n\n`;
             body += `<!-- STATUS_UPDATE_DATA\n`;
             body += JSON.stringify(updates, null, 2);
             body += `\n-->\n\n`;
             body += `## Summary\n\n`;
             
             updates.forEach(update => {
-                const statusEmoji = {
-                    'in_progress': '🔄',
-                    'completed': '✅',
-                    'blocked': '🚫',
-                    'needs_review': '👀'
-                };
                 
                 body += `### Issue #${update.issue_number}: ${update.issue_title}\n`;
-                body += `**Status:** ${statusEmoji[update.status]} ${update.status.replace('_', ' ')}\n`;
+                body += `**Status:** ${makeStatusMatchGitHub([update.status])}\n`;
                 if (update.comment) {
                     body += `**Comment:** ${update.comment}\n`;
                 }
