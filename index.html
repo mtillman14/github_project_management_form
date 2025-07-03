@@ -375,11 +375,24 @@
                 issues.forEach(issue => statusMap[issue.number] = null);
             }
 
-            // --- Render issues with status as radio selection ---
+            // --- Render issues with status as radio selection ---            
             container.innerHTML = issues.map(issue => {
                 const status = normalizeStatus(statusMap[issue.number]);
                 return `
-                    <div class="issue-item">
+                    <div class="issue-item" id="issue-item-${issue.number}" style="position:relative;">
+                        <button type="button" class="close-issue-btn" data-issue="${issue.number}" title="Remove this issue" style="
+                            position:absolute;
+                            top:8px;
+                            right:8px;
+                            background:transparent;
+                            border:none;
+                            color:#d1242f;
+                            font-size:20px;
+                            font-weight:bold;
+                            cursor:pointer;
+                            line-height:1;
+                            z-index:2;
+                        ">&times;</button>
                         <div class="issue-title">
                             <a href="${issue.html_url}" target="_blank">#${issue.number}: ${issue.title}</a>
                         </div>
@@ -394,6 +407,7 @@
                             <label>
                                 <input type="radio" name="status_${issue.number}" value="scheduled" ${status === 'scheduled' ? 'checked' : ''}>
                                 📅 Scheduled
+                            </label>
                             <label>
                                 <input type="radio" name="status_${issue.number}" value="todo" ${status === 'todo' ? 'checked' : ''}>
                                 📝 To Do
@@ -419,10 +433,46 @@
                             name="comment_${issue.number}" 
                             class="comment-box" 
                             placeholder="Are there any comments or updates about this issue?"></textarea>
+                        <button type="button" class="submit-btn single-issue-btn" data-issue="${issue.number}" style="margin-top:10px;">Submit This Issue</button>
                     </div>
                 `;
             }).join('');
+
+            // Show the submit button if there are issues
+            document.getElementById('submitBtn').style.display = 'block';
+
+            // Attach event listeners for single-issue submit buttons
+            document.querySelectorAll('.single-issue-btn').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const issueNumber = this.getAttribute('data-issue');
+                    await submitSingleIssue(issueNumber);
+                });
+            });
+
+            document.querySelectorAll('.close-issue-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const issueNumber = this.getAttribute('data-issue');
+                    // Remove from DOM
+                    const el = document.getElementById(`issue-item-${issueNumber}`);
+                    if (el) el.remove();
+                    // Remove from currentIssues
+                    currentIssues = currentIssues.filter(i => i.number != issueNumber);
+                    // If no issues left, hide the batch submit button and show a message
+                    if (currentIssues.length === 0) {
+                        document.getElementById('submitBtn').style.display = 'none';
+                        document.getElementById('issuesContainer').innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
+                    }
+                });
+            });
         }
+
+        // Attach event listeners for single-issue submit buttons after rendering
+        document.querySelectorAll('.single-issue-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const issueNumber = this.getAttribute('data-issue');
+                await submitSingleIssue(issueNumber);
+            });
+        });
         
         // Helper function to determine text color based on background color
         function getContrastColor(hexColor) {
@@ -463,6 +513,94 @@
                     users.map(user => `<option value="${user.login}">${user.login}</option>`).join('');
             } catch (e) {
                 usernameSelect.innerHTML = `<option value="" disabled selected>Could not load team. Check the GitHub Personal Access Token.</option>`;
+            }
+        }
+
+        async function submitSingleIssue(issueNumber) {
+            const username = document.getElementById('username').value;
+            const owner_repo = document.getElementById('owner_repo').value;
+            const [owner, repo, project] = owner_repo.split('/');
+            const pat = document.getElementById('pat').value;
+            const submitBtn = document.querySelector(`.single-issue-btn[data-issue="${issueNumber}"]`);
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                const issue = currentIssues.find(i => i.number == issueNumber);
+                const status = document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value;
+                const comment = document.querySelector(`textarea[name="comment_${issue.number}"]`)?.value;
+                const originalStatus = normalizeStatus(issue._originalStatus);
+
+                const update = {
+                    issue_number: issue.number,
+                    issue_title: issue.title,
+                    status: makeStatusMatchGitHub(status),
+                    comment: comment || '',
+                    user: username,
+                    originalStatus: originalStatus
+                };
+
+                // Only submit if status changed or comment is non-empty
+                const normalizedNew = normalizeStatus(update.status);
+                const normalizedOld = normalizeStatus(update.originalStatus);
+                if ((normalizedNew === normalizedOld) && (!update.comment || update.comment.trim() === '')) {
+                    throw new Error('No changes to submit for this issue.');
+                }
+
+                const updateBody = generateUpdateIssue([update], username);
+                const updateTitle = `Status Update - ${new Date().toISOString().split('T')[0]} - ${username} - #${issue.number}`;
+
+                const headers = {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                };
+                if (pat) {
+                    headers['Authorization'] = `Bearer ${pat}`;
+                }
+
+                const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        title: updateTitle,
+                        body: updateBody,
+                        labels: ['status-update', 'automation']
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('Authentication required. This form cannot create issues in private repositories or when rate limited.');
+                    } else if (response.status === 403) {
+                        throw new Error('Permission denied. You may not have write access to this repository, or you\'ve hit the API rate limit.');
+                    } else if (response.status === 404) {
+                        throw new Error('Repository not found or not accessible.');
+                    } else {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(`GitHub API error: ${response.status} - ${errorData.message || response.statusText}`);
+                    }
+                }
+
+                // Remove the issue from the DOM and from currentIssues
+                document.getElementById(`issue-item-${issue.number}`).remove();
+                currentIssues = currentIssues.filter(i => i.number != issue.number);
+
+                // If no issues left, hide the batch submit button and show a message
+                if (currentIssues.length === 0) {
+                    document.getElementById('submitBtn').style.display = 'none';
+                    document.getElementById('issuesContainer').innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
+                }
+
+            } catch (error) {
+                console.error('Error submitting single issue update:', error);
+                showErrorMessage(error.message);
+            } finally {
+                // Only re-enable if the button still exists (not removed)
+                if (document.body.contains(submitBtn)) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalText;
+                }
             }
         }
         
