@@ -31,6 +31,12 @@
             margin-bottom: 16px;
             background-color: #f6f8fa;
         }
+        .issue-item.removing {
+            opacity: 0;
+            transform: translateY(-20px) scale(0.98);
+            transition: opacity 0.4s cubic-bezier(.4,0,.2,1), transform 0.4s cubic-bezier(.4,0,.2,1);
+            pointer-events: none;
+        }
         .issue-title {
             font-weight: 600;
             color: #0969da;
@@ -454,14 +460,17 @@
                     const issueNumber = this.getAttribute('data-issue');
                     // Remove from DOM
                     const el = document.getElementById(`issue-item-${issueNumber}`);
-                    if (el) el.remove();
-                    // Remove from currentIssues
-                    currentIssues = currentIssues.filter(i => i.number != issueNumber);
-                    // If no issues left, hide the batch submit button and show a message
-                    if (currentIssues.length === 0) {
-                        document.getElementById('submitBtn').style.display = 'none';
-                        document.getElementById('issuesContainer').innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
-                    }
+                    if (el) {
+                        el.classList.add('removing');
+                        setTimeout(() => {
+                            el.remove();
+                            currentIssues = currentIssues.filter(i => i.number != issueNumber);
+                            if (currentIssues.length === 0) {
+                                document.getElementById('submitBtn').style.display = 'none';
+                                document.getElementById('issuesContainer').innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
+                            }
+                        }, 400); // Match the CSS transition duration
+                    };
                 });
             });
         }
@@ -583,8 +592,18 @@
                 }
 
                 // Remove the issue from the DOM and from currentIssues
-                document.getElementById(`issue-item-${issue.number}`).remove();
-                currentIssues = currentIssues.filter(i => i.number != issue.number);
+                const el = document.getElementById(`issue-item-${issueNumber}`);
+                if (el) {
+                    el.classList.add('removing');
+                    setTimeout(() => {
+                        el.remove();
+                        currentIssues = currentIssues.filter(i => i.number != issueNumber);
+                        if (currentIssues.length === 0) {
+                            document.getElementById('submitBtn').style.display = 'none';
+                            document.getElementById('issuesContainer').innerHTML = '<div class="loading">No assigned issues found for this user.</div>';
+                        }
+                    }, 400); // Match the CSS transition duration
+                }
 
                 // If no issues left, hide the batch submit button and show a message
                 if (currentIssues.length === 0) {
