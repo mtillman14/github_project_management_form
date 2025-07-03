@@ -368,6 +368,7 @@
                         }
                     }
                     statusMap[issue.number] = status;
+                    issue._originalStatus = status; // Store original status for comparison
                 });
             } catch (e) {
                 // If error, fallback to null statuses
@@ -485,7 +486,9 @@
                 const updates = currentIssues.map(issue => {
                     const status = document.querySelector(`input[name="status_${issue.number}"]:checked`)?.value;
                     const comment = document.querySelector(`textarea[name="comment_${issue.number}"]`)?.value;
+                    const originalStatus = normalizeStatus(issue._originalStatus);
 
+                    // Log the status element and its value for debugging
                     const statusElement = document.querySelector(`input[name="status_${issue.number}"]:checked`);
                     const statusCheck = statusElement?.value;
                     
@@ -500,8 +503,16 @@
                         issue_title: issue.title,
                         status: makeStatusMatchGitHub(status),
                         comment: comment || '',
-                        user: username
+                        user: username,
+                        originalStatus: originalStatus
                     };
+                })
+                // Only include issues where status changed or comment is non-empty
+                .filter(update => {
+                    // Compare normalized statuses
+                    const normalizedNew = normalizeStatus(update.status);
+                    const normalizedOld = normalizeStatus(update.originalStatus);
+                    return (normalizedNew !== normalizedOld) || (update.comment && update.comment.trim() !== '');
                 });
 
                 console.log('Collected updates:', updates);
