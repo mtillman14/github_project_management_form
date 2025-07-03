@@ -391,7 +391,7 @@
                         <div class="status-options">
                             <strong>Status Update:</strong>
                             <label>
-                                <input type="radio" name="status_${issue.number}" value="scheduled" ${!status ? 'checked' : ''}>
+                                <input type="radio" name="status_${issue.number}" value="scheduled" ${status === 'scheduled' ? 'checked' : ''}>
                                 📅 Scheduled
                             <label>
                                 <input type="radio" name="status_${issue.number}" value="todo" ${status === 'todo' ? 'checked' : ''}>
